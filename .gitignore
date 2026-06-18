@@ -1,0 +1,5 @@
+﻿data.db
+data.json
+*.log
+__pycache__/
+*.pyc
