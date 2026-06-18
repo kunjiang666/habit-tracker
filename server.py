@@ -255,6 +255,28 @@ def delete_record(date):
         conn.close()
     return jsonify({"ok": True})
 
+
+@app.route("/api/admin/data", methods=["GET"])
+def admin_data():
+    pw = request.args.get("pw", "")
+    admin_pw = os.environ.get("ADMIN_PASSWORD", "admin888")
+    if pw != admin_pw:
+        return jsonify({"error": "密码错误，请在URL加 ?pw=你的密码"}), 403
+    conn = get_db()
+    try:
+        if USE_PG:
+            with conn.cursor() as cur:
+                cur.execute("SELECT id, username, created_at FROM users ORDER BY id")
+                users = [dict(r) for r in cur.fetchall()]
+                cur.execute("SELECT r.id, u.username, r.date, r.weight, r.poop FROM records r JOIN users u ON r.user_id = u.id ORDER BY u.username, r.date")
+                records = [dict(r) for r in cur.fetchall()]
+        else:
+            users = [{"id":r["id"],"username":r["username"],"created_at":str(r["created_at"])} for r in conn.execute("SELECT id, username, created_at FROM users ORDER BY id").fetchall()]
+            records = [{"id":r["id"],"username":r["username"],"date":r["date"],"weight":r["weight"],"poop":bool(r["poop"])} for r in conn.execute("SELECT r.id, u.username, r.date, r.weight, r.poop FROM records r JOIN users u ON r.user_id = u.id ORDER BY u.username, r.date").fetchall()]
+        return jsonify({"users": users, "records": records})
+    finally:
+        conn.close()
+
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
     import socket
