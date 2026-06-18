@@ -5,7 +5,7 @@ from functools import wraps
 import secrets
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-app = Flask(__name__, static_folder=BASE_DIR
+app = Flask(__name__, static_folder=BASE_DIR)
 CORS(app, supports_credentials=True)
 
 DB_FILE = os.path.join(BASE_DIR, 'data.db')
