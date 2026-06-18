@@ -1,13 +1,14 @@
-﻿import json, os, sqlite3
+import json, os, sqlite3
 from flask import Flask, request, jsonify, send_from_directory, session
 from flask_cors import CORS
 from functools import wraps
 import secrets
 
-app = Flask(__name__, static_folder='.')
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+app = Flask(__name__, static_folder=BASE_DIR
 CORS(app, supports_credentials=True)
 
-DB_FILE = os.path.join(os.path.dirname(__file__), 'data.db')
+DB_FILE = os.path.join(BASE_DIR, 'data.db')
 PASSWORD = os.environ.get('APP_PASSWORD', '')
 app.secret_key = os.environ.get('SECRET_KEY', secrets.token_hex(32))
 
@@ -29,11 +30,11 @@ def require_auth(f):
 # --- Serve frontend ---
 @app.route('/')
 def serve_index():
-    return send_from_directory('.', 'index.html')
+    return send_from_directory(BASE_DIR, 'index.html')
 
 @app.route('/<path:path>')
 def serve_static(path):
-    return send_from_directory('.', path)
+    return send_from_directory(BASE_DIR, path)
 
 # --- Auth ---
 @app.route('/api/check-auth')
