@@ -5,100 +5,130 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>每日打卡</title>
 <style>
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  :root { --primary: #4f7ec9; --primary-light: #eaf0fa; --bg: #f4f5f7; --card: #ffffff; --text: #1e1e2a; --text-muted: #8e8ea0; --border: #e2e4e8; --sad: #d95c5c; --poop-color: #8b6b4a; --today-ring: var(--primary); --radius: 10px; }
-  html { font-size: 15px; }
-  body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans SC", sans-serif; background: var(--bg); color: var(--text); min-height: 100vh; display: flex; justify-content: center; padding: 24px 16px; }
-  .container { width: 100%; max-width: 560px; }
-  .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
-  .header h1 { font-size: 1.35rem; font-weight: 600; letter-spacing: 0.5px; }
-  .month-nav { display: flex; align-items: center; gap: 10px; }
-  .month-nav .month-label { font-size: 1.05rem; font-weight: 500; min-width: 108px; text-align: center; }
-  .month-nav button { background: var(--card); border: 1px solid var(--border); border-radius: 6px; width: 32px; height: 32px; font-size: 1rem; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: background 0.15s, border-color 0.15s; color: var(--text); line-height: 1; }
-  .month-nav button:hover { background: var(--primary-light); border-color: var(--primary); }
-  .legend { display: flex; gap: 20px; margin-bottom: 16px; font-size: 0.85rem; color: var(--text-muted); }
-  .legend span { display: flex; align-items: center; gap: 4px; }
-  .calendar { background: var(--card); border-radius: var(--radius); box-shadow: 0 1px 4px rgba(0,0,0,0.06); overflow: hidden; }
-  .weekdays { display: grid; grid-template-columns: repeat(7, 1fr); background: #f9fafb; border-bottom: 1px solid var(--border); }
-  .weekdays span { padding: 10px 0 8px; text-align: center; font-size: 0.8rem; font-weight: 500; color: var(--text-muted); }
-  .weekdays span:last-child, .weekdays span:first-child { color: #c0a0a0; }
-  .days-grid { display: grid; grid-template-columns: repeat(7, 1fr); }
-  .day-cell { aspect-ratio: 1; padding: 4px 2px; display: flex; flex-direction: column; align-items: center; justify-content: flex-start; cursor: pointer; border-right: 1px solid var(--border); border-bottom: 1px solid var(--border); background: var(--card); transition: background 0.12s; position: relative; min-height: 72px; }
-  .day-cell:nth-child(7n) { border-right: none; }
-  .day-cell:hover { background: var(--primary-light); }
-  .day-cell.empty { cursor: default; background: #fafbfc; }
-  .day-cell.empty:hover { background: #fafbfc; }
-  .day-cell.today { box-shadow: inset 0 0 0 2px var(--today-ring); z-index: 1; }
-  .day-cell.future { opacity: 0.55; }
-  .day-cell .date-num { font-size: 0.82rem; font-weight: 500; line-height: 1.4; margin-top: 2px; }
-  .day-cell .weight-line { font-size: 0.7rem; line-height: 1.3; margin-top: 1px; display: flex; align-items: center; gap: 1px; }
-  .day-cell .weight-line .val { font-weight: 500; }
-  .day-cell .weight-line .sad { font-size: 0.75rem; }
-  .day-cell .poop-line { font-size: 1.05rem; line-height: 1; margin-top: auto; margin-bottom: 3px; transition: filter 0.2s, opacity 0.2s; }
-  .day-cell .poop-line.done { filter: grayscale(0); opacity: 1; }
-  .day-cell .poop-line.undone { filter: grayscale(1); opacity: 0.2; }
-  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.35); z-index: 100; justify-content: center; align-items: center; padding: 16px; }
-  .modal-overlay.open { display: flex; }
-  .modal-box { background: var(--card); border-radius: 14px; width: 100%; max-width: 340px; padding: 24px 22px 20px; box-shadow: 0 8px 30px rgba(0,0,0,0.12); animation: fadeUp 0.18s ease; }
-  @keyframes fadeUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
-  .modal-box h2 { font-size: 1.1rem; font-weight: 600; margin-bottom: 18px; text-align: center; }
-  .form-group { margin-bottom: 16px; }
-  .form-group label { display: block; font-size: 0.85rem; font-weight: 500; margin-bottom: 6px; color: var(--text-muted); }
-  .form-group input[type="number"] { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 1rem; outline: none; transition: border-color 0.15s; }
-  .form-group input[type="number"]:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(79,126,201,0.12); }
-  .poop-btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); font-size: 1rem; cursor: pointer; transition: background 0.15s, border-color 0.15s; }
-  .poop-btn:hover { background: var(--primary-light); }
-  .poop-btn.checked { border-color: var(--poop-color); background: #f5ede4; }
-  .modal-actions { display: flex; gap: 8px; margin-top: 20px; }
-  .modal-actions button { flex: 1; padding: 10px 0; border-radius: 8px; font-size: 0.9rem; font-weight: 500; cursor: pointer; border: 1px solid var(--border); background: var(--card); transition: background 0.15s; }
-  .modal-actions .btn-primary { background: var(--primary); color: #fff; border-color: var(--primary); }
-  .modal-actions .btn-primary:hover { filter: brightness(1.08); }
-  .modal-actions .btn-danger { color: var(--sad); border-color: #f0d0d0; }
-  .modal-actions .btn-danger:hover { background: #fdf0f0; }
-  .modal-actions .btn-cancel:hover { background: #f5f5f5; }
-  .toast { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%); background: #2d2d3a; color: #f0f0f0; padding: 10px 22px; border-radius: 8px; font-size: 0.85rem; opacity: 0; transition: opacity 0.25s; pointer-events: none; z-index: 200; white-space: nowrap; }
-  .toast.show { opacity: 1; }
-  @media (max-width: 420px) { body { padding: 12px 8px; } .day-cell { min-height: 62px; padding: 3px 1px; } .day-cell .date-num { font-size: 0.75rem; } .day-cell .weight-line { font-size: 0.65rem; } .day-cell .poop-line { font-size: 0.9rem; } .modal-box { padding: 18px 16px 16px; } .header h1 { font-size: 1.15rem; } }
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--primary:#4f7ec9;--primary-light:#eaf0fa;--bg:#f4f5f7;--card:#fff;--text:#1e1e2a;--text-muted:#8e8ea0;--border:#e2e4e8;--sad:#d95c5c;--poop-color:#8b6b4a;--today-ring:var(--primary);--radius:10px}
+html{font-size:15px}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Noto Sans SC",sans-serif;background:var(--bg);color:var(--text);min-height:100vh;display:flex;justify-content:center;padding:24px 16px}
+.container{width:100%;max-width:560px}
+.header{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px}
+.header h1{font-size:1.35rem;font-weight:600;letter-spacing:.5px}
+.user-info{display:flex;align-items:center;gap:10px;font-size:.85rem;color:var(--text-muted)}
+.user-info .logout-btn{cursor:pointer;color:var(--sad);font-size:.8rem;border:none;background:none;padding:4px 8px;border-radius:4px}
+.user-info .logout-btn:hover{background:#fdf0f0}
+.month-nav{display:flex;align-items:center;gap:10px}
+.month-nav .month-label{font-size:1.05rem;font-weight:500;min-width:108px;text-align:center}
+.month-nav button{background:var(--card);border:1px solid var(--border);border-radius:6px;width:32px;height:32px;font-size:1rem;cursor:pointer;display:flex;align-items:center;justify-content:center;color:var(--text);line-height:1}
+.month-nav button:hover{background:var(--primary-light);border-color:var(--primary)}
+.legend{display:flex;gap:20px;margin-bottom:16px;font-size:.85rem;color:var(--text-muted)}
+.legend span{display:flex;align-items:center;gap:4px}
+.calendar{background:var(--card);border-radius:var(--radius);box-shadow:0 1px 4px rgba(0,0,0,.06);overflow:hidden}
+.weekdays{display:grid;grid-template-columns:repeat(7,1fr);background:#f9fafb;border-bottom:1px solid var(--border)}
+.weekdays span{padding:10px 0 8px;text-align:center;font-size:.8rem;font-weight:500;color:var(--text-muted)}
+.weekdays span:last-child,.weekdays span:first-child{color:#c0a0a0}
+.days-grid{display:grid;grid-template-columns:repeat(7,1fr)}
+.day-cell{aspect-ratio:1;padding:4px 2px;display:flex;flex-direction:column;align-items:center;justify-content:flex-start;cursor:pointer;border-right:1px solid var(--border);border-bottom:1px solid var(--border);background:var(--card);min-height:72px}
+.day-cell:nth-child(7n){border-right:none}
+.day-cell:hover{background:var(--primary-light)}
+.day-cell.empty{cursor:default;background:#fafbfc}
+.day-cell.empty:hover{background:#fafbfc}
+.day-cell.today{box-shadow:inset 0 0 0 2px var(--today-ring)}
+.day-cell.future{opacity:.55}
+.day-cell .date-num{font-size:.82rem;font-weight:500;line-height:1.4;margin-top:2px}
+.day-cell .weight-line{font-size:.7rem;line-height:1.3;margin-top:1px;display:flex;align-items:center;gap:1px}
+.day-cell .weight-line .val{font-weight:500}
+.day-cell .weight-line .sad{font-size:.75rem}
+.day-cell .poop-line{font-size:1.05rem;line-height:1;margin-top:auto;margin-bottom:3px}
+.day-cell .poop-line.done{filter:grayscale(0);opacity:1}
+.day-cell .poop-line.undone{filter:grayscale(1);opacity:.2}
+.modal-overlay{display:none;position:fixed;inset:0;background:rgba(0,0,0,.35);z-index:100;justify-content:center;align-items:center;padding:16px}
+.modal-overlay.open{display:flex}
+.modal-box{background:var(--card);border-radius:14px;width:100%;max-width:340px;padding:24px 22px 20px;box-shadow:0 8px 30px rgba(0,0,0,.12);animation:fadeUp .18s ease}
+@keyframes fadeUp{from{opacity:0;transform:translateY(12px)}to{opacity:1;transform:translateY(0)}}
+.modal-box h2{font-size:1.1rem;font-weight:600;margin-bottom:18px;text-align:center}
+.form-group{margin-bottom:16px}
+.form-group label{display:block;font-size:.85rem;font-weight:500;margin-bottom:6px;color:var(--text-muted)}
+.form-group input[type="number"]{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:1rem;outline:none}
+.form-group input[type="number"]:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(79,126,201,.12)}
+.poop-btn{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--card);font-size:1rem;cursor:pointer}
+.poop-btn:hover{background:var(--primary-light)}
+.poop-btn.checked{border-color:var(--poop-color);background:#f5ede4}
+.modal-actions{display:flex;gap:8px;margin-top:20px}
+.modal-actions button{flex:1;padding:10px 0;border-radius:8px;font-size:.9rem;font-weight:500;cursor:pointer;border:1px solid var(--border);background:var(--card)}
+.modal-actions .btn-primary{background:var(--primary);color:#fff;border-color:var(--primary)}
+.modal-actions .btn-primary:hover{filter:brightness(1.08)}
+.modal-actions .btn-danger{color:var(--sad);border-color:#f0d0d0}
+.modal-actions .btn-danger:hover{background:#fdf0f0}
+.modal-actions .btn-cancel:hover{background:#f5f5f5}
+.toast{position:fixed;bottom:28px;left:50%;transform:translateX(-50%);background:#2d2d3a;color:#f0f0f0;padding:10px 22px;border-radius:8px;font-size:.85rem;opacity:0;pointer-events:none;z-index:200;white-space:nowrap}
+.toast.show{opacity:1}
+
+/* Login / Register */
+.auth-overlay{position:fixed;inset:0;z-index:999;background:var(--bg);display:flex;justify-content:center;align-items:center;padding:20px}
+.auth-overlay.hidden{display:none}
+.auth-box{background:var(--card);border-radius:14px;padding:32px 28px;width:100%;max-width:340px;box-shadow:0 2px 16px rgba(0,0,0,.08);text-align:center}
+.auth-box h2{font-size:1.2rem;font-weight:600;margin-bottom:4px}
+.auth-box .sub{font-size:.85rem;color:var(--text-muted);margin-bottom:20px}
+.auth-box input{width:100%;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:1rem;outline:none;margin-bottom:10px}
+.auth-box input:focus{border-color:var(--primary);box-shadow:0 0 0 3px rgba(79,126,201,.12)}
+.auth-box .auth-btn{width:100%;padding:10px 0;border:none;border-radius:8px;background:var(--primary);color:#fff;font-size:.95rem;font-weight:500;cursor:pointer;margin-bottom:8px}
+.auth-box .auth-btn:hover{filter:brightness(1.08)}
+.auth-box .auth-toggle{font-size:.82rem;color:var(--primary);cursor:pointer;display:inline-block;margin-top:4px}
+.auth-box .auth-toggle:hover{text-decoration:underline}
+.auth-box .auth-error{color:var(--sad);font-size:.8rem;margin-top:6px;min-height:1.2em}
+
+@media(max-width:420px){
+  body{padding:12px 8px}
+  .day-cell{min-height:62px;padding:3px 1px}
+  .day-cell .date-num{font-size:.75rem}
+  .day-cell .weight-line{font-size:.65rem}
+  .day-cell .poop-line{font-size:.9rem}
+  .modal-box{padding:18px 16px 16px}
+  .header h1{font-size:1.15rem}
+}
 </style>
 </head>
 <body>
-<div class="container">
+
+<div class="auth-overlay" id="authOverlay">
+  <div class="auth-box">
+    <h2 id="authTitle">登录</h2>
+    <div class="sub" id="authSub">输入用户名和密码</div>
+    <input type="text" id="authUser" placeholder="用户名" autocomplete="username">
+    <input type="password" id="authPass" placeholder="密码" autocomplete="current-password">
+    <button class="auth-btn" id="authBtn">登录</button>
+    <div class="auth-toggle" id="authToggle">没有账号？点此注册</div>
+    <div class="auth-error" id="authError"></div>
+  </div>
+</div>
+
+<div class="container" id="mainApp">
   <div class="header">
-    <h1>📋 每日打卡</h1>
-    <div class="month-nav">
-      <button id="prevMonthBtn" title="上个月">◀</button>
-      <span class="month-label" id="monthLabel"></span>
-      <button id="nextMonthBtn" title="下个月">▶</button>
+    <h1>每日打卡</h1>
+    <div class="user-info">
+      <span id="userDisplay"></span>
+      <button class="logout-btn" id="logoutBtn">退出</button>
     </div>
+  </div>
+  <div class="month-nav" style="justify-content:center;margin-bottom:16px">
+    <button id="prevMonthBtn">&lt;</button>
+    <span class="month-label" id="monthLabel"></span>
+    <button id="nextMonthBtn">&gt;</button>
   </div>
   <div class="legend">
-    <span><span style="font-size:1rem;">😊</span> ≤ 57kg &nbsp; <span style="font-size:1rem;">😞</span> &gt; 57kg</span>
-    <span>
-      <span style="filter:grayscale(1);opacity:0.25;">💩</span>
-      <span style="margin:0 2px;">→</span>
-      <span>💩</span>
-      拉屎打卡
-    </span>
+    <span><span style="font-size:1rem;">😊</span> ≤ 57kg <span style="font-size:1rem;">😞</span> &gt; 57kg</span>
+    <span><span style="filter:grayscale(1);opacity:.25;">💩</span><span style="margin:0 2px;">→</span><span>💩</span> 拉屎打卡</span>
   </div>
   <div class="calendar">
-    <div class="weekdays">
-      <span>一</span><span>二</span><span>三</span>
-      <span>四</span><span>五</span><span>六</span><span>日</span>
-    </div>
+    <div class="weekdays"><span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span></div>
     <div class="days-grid" id="daysGrid"></div>
   </div>
 </div>
+
 <div class="modal-overlay" id="modalOverlay">
   <div class="modal-box">
-    <h2 id="modalTitle">6 月 18 日</h2>
-    <div class="form-group">
-      <label>体重（kg）</label>
-      <input type="number" id="weightInput" step="0.1" placeholder="留空则不记录" autofocus>
-    </div>
-    <div class="form-group">
-      <label>拉屎</label>
-      <button class="poop-btn" id="poopBtn">💩 未打卡</button>
-    </div>
+    <h2 id="modalTitle">6月18日</h2>
+    <div class="form-group"><label>体重(kg)</label><input type="number" id="weightInput" step="0.1" placeholder="留空则不记录" autofocus></div>
+    <div class="form-group"><label>拉屎</label><button class="poop-btn" id="poopBtn">💩 未打卡</button></div>
     <div class="modal-actions">
       <button class="btn-primary" id="saveBtn">保存</button>
       <button class="btn-danger" id="deleteBtn">删除</button>
@@ -107,79 +137,247 @@
   </div>
 </div>
 <div class="toast" id="toast"></div>
+
 <script>
-(function() {
-  "use strict";
-  const STORAGE_KEY = "habit_tracker";
-  let data = (function(){ try { var r = localStorage.getItem(STORAGE_KEY); return r ? JSON.parse(r) : {}; } catch(e) { return {}; } })();
-  let viewYear, viewMonth, editingDate = null, modalPoop = false;
-  const grid = document.getElementById("daysGrid");
-  const monthLabel = document.getElementById("monthLabel");
-  const overlay = document.getElementById("modalOverlay");
-  const modalTitle = document.getElementById("modalTitle");
-  const weightInp = document.getElementById("weightInput");
-  const poopBtn = document.getElementById("poopBtn");
-  const saveBtn = document.getElementById("saveBtn");
-  const deleteBtn = document.getElementById("deleteBtn");
-  const cancelBtn = document.getElementById("cancelBtn");
-  const toastEl = document.getElementById("toast");
-  const prevBtn = document.getElementById("prevMonthBtn");
-  const nextBtn = document.getElementById("nextMonthBtn");
-  function saveData() { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); }
-  function pad2(n) { return ("0" + n).slice(-2); }
-  function dateKey(y, m, d) { return y + "-" + pad2(m) + "-" + pad2(d); }
-  function isToday(y, m, d) { var t = new Date(); return t.getFullYear() === y && (t.getMonth() + 1) === m && t.getDate() === d; }
-  function isFutureDate(y, m, d) { var t = new Date(), c = new Date(y, m - 1, d); c.setHours(0,0,0,0); t.setHours(0,0,0,0); return c > t; }
-  function getMonthData(y, m) { var f = new Date(y, m - 1, 1), d = f.getDay(); d = (d === 0) ? 6 : d - 1; return { firstDow: d, daysInMonth: new Date(y, m, 0).getDate() }; }
-  function showToast(msg, dl) { toastEl.textContent = msg; toastEl.classList.add("show"); clearTimeout(toastEl._timer); toastEl._timer = setTimeout(function(){ toastEl.classList.remove("show"); }, dl || 1600); }
-  function render() {
-    var md = getMonthData(viewYear, viewMonth);
-    var totalCells = md.firstDow + md.daysInMonth;
-    var totalSlots = Math.ceil(totalCells / 7) * 7;
-    monthLabel.textContent = viewYear + "年" + viewMonth + "月";
-    var html = "";
-    for (var i = 0; i < totalSlots; i++) {
-      var dayNum = i - md.firstDow + 1;
-      var valid = dayNum >= 1 && dayNum <= md.daysInMonth;
-      if (!valid) { html += '<div class="day-cell empty"></div>'; continue; }
-      var cls = ["day-cell"];
-      if (isToday(viewYear, viewMonth, dayNum)) cls.push("today");
-      if (isFutureDate(viewYear, viewMonth, dayNum)) cls.push("future");
-      var key = dateKey(viewYear, viewMonth, dayNum);
-      var entry = data[key];
-      var wh = "";
-      if (entry && entry.weight !== undefined && entry.weight !== null) {
-        var w = Number(entry.weight);
-        wh = '<div class="weight-line"><span class="val">' + w.toFixed(1) + '</span>' + (w > 57 ? ' <span class="sad">😞</span>' : ' <span class="sad">😊</span>') + '</div>';
-      }
-      var pd = entry && entry.poop;
-      html += '<div class="' + cls.join(" ") + '" data-date="' + key + '"><div class="date-num">' + dayNum + '</div>' + wh + '<div class="poop-line ' + (pd ? "done" : "undone") + '">💩</div></div>';
+(function(){
+"use strict";
+
+var TOKEN_KEY = "habit_tracker_token";
+var token = localStorage.getItem(TOKEN_KEY) || "";
+var username = "";
+var data = {};
+var viewYear, viewMonth, editingDate = null, modalPoop = false;
+
+var authOverlay = document.getElementById("authOverlay");
+var authTitle = document.getElementById("authTitle");
+var authSub = document.getElementById("authSub");
+var authUser = document.getElementById("authUser");
+var authPass = document.getElementById("authPass");
+var authBtn = document.getElementById("authBtn");
+var authToggle = document.getElementById("authToggle");
+var authError = document.getElementById("authError");
+var userDisplay = document.getElementById("userDisplay");
+var logoutBtn = document.getElementById("logoutBtn");
+var grid = document.getElementById("daysGrid");
+var monthLabel = document.getElementById("monthLabel");
+var overlay = document.getElementById("modalOverlay");
+var modalTitle = document.getElementById("modalTitle");
+var weightInp = document.getElementById("weightInput");
+var poopBtn = document.getElementById("poopBtn");
+var saveBtn = document.getElementById("saveBtn");
+var deleteBtn = document.getElementById("deleteBtn");
+var cancelBtn = document.getElementById("cancelBtn");
+var toastEl = document.getElementById("toast");
+var prevBtn = document.getElementById("prevMonthBtn");
+var nextBtn = document.getElementById("nextMonthBtn");
+
+var isLogin = true;
+
+function api(path, opts) {
+  opts = opts || {};
+  var url = path;
+  if (token) {
+    if (opts.method === "GET" || !opts.method) {
+      url += (url.indexOf("?") >= 0 ? "&" : "?") + "token=" + encodeURIComponent(token);
+    } else {
+      opts.headers = opts.headers || {};
+      opts.headers["Authorization"] = "Bearer " + token;
     }
-    grid.innerHTML = html;
   }
-  function openModal(key) { editingDate = key; var d = data[key] || {}, parts = key.split("-").map(Number); modalTitle.textContent = parts[1] + "月" + parts[2] + "日"; weightInp.value = (d.weight != null) ? d.weight : ""; modalPoop = !!d.poop; if(modalPoop){poopBtn.innerHTML="💩已打卡";poopBtn.classList.add("checked");}else{poopBtn.innerHTML="💩未打卡";poopBtn.classList.remove("checked");} overlay.classList.add("open"); setTimeout(function(){weightInp.focus();},100); }
-  function closeModal() { overlay.classList.remove("open"); editingDate = null; }
-  poopBtn.addEventListener("click", function(){ modalPoop = !modalPoop; if(modalPoop){poopBtn.innerHTML="💩已打卡";poopBtn.classList.add("checked");}else{poopBtn.innerHTML="💩未打卡";poopBtn.classList.remove("checked");} });
-  saveBtn.addEventListener("click", function(){
-    if (!editingDate) return;
-    var r = weightInp.value.trim(), hw = r !== "", w = hw ? parseFloat(r) : null;
-    if (hw && !isNaN(w)) { data[editingDate] = data[editingDate] || {}; data[editingDate].weight = w; }
-    else if (!hw && !modalPoop) { delete data[editingDate]; saveData(); closeModal(); render(); showToast("已清除记录"); return; }
-    else if (!hw) { if (data[editingDate]) { delete data[editingDate].weight; if (!Object.keys(data[editingDate]).length) delete data[editingDate]; } }
-    else { showToast("请输入有效体重", 1800); return; }
-    if (modalPoop) { data[editingDate] = data[editingDate] || {}; data[editingDate].poop = true; }
-    else if (data[editingDate]) { delete data[editingDate].poop; if (!Object.keys(data[editingDate]).length) delete data[editingDate]; }
-    saveData(); closeModal(); render(); showToast("已保存");
+  return fetch(url, opts).then(function(r){ return r.json(); });
+}
+
+function showToast(msg, d) {
+  toastEl.textContent = msg;
+  toastEl.classList.add("show");
+  clearTimeout(toastEl._timer);
+  toastEl._timer = setTimeout(function(){ toastEl.classList.remove("show"); }, d || 1600);
+}
+
+function showAuth() { authOverlay.classList.remove("hidden"); }
+function hideAuth() { authOverlay.classList.add("hidden"); }
+
+function updateAuthUI() {
+  if (isLogin) {
+    authTitle.textContent = "登录";
+    authSub.textContent = "输入用户名和密码";
+    authBtn.textContent = "登录";
+    authToggle.textContent = "没有账号？点此注册";
+    authPass.autocomplete = "current-password";
+  } else {
+    authTitle.textContent = "注册";
+    authSub.textContent = "创建一个新账号";
+    authBtn.textContent = "注册";
+    authToggle.textContent = "已有账号？点此登录";
+    authPass.autocomplete = "new-password";
+  }
+  authError.textContent = "";
+}
+
+function doAuth() {
+  var u = authUser.value.trim();
+  var p = authPass.value.trim();
+  if (!u || !p) { authError.textContent = "请填写用户名和密码"; return; }
+  authError.textContent = "";
+  var endpoint = isLogin ? "/api/login" : "/api/register";
+  api(endpoint, {method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({username:u,password:p})})
+  .then(function(r){
+    if (r.ok) {
+      token = r.token;
+      username = r.username || u;
+      localStorage.setItem(TOKEN_KEY, token);
+      userDisplay.textContent = username;
+      hideAuth();
+      authUser.value = "";
+      authPass.value = "";
+      initApp();
+    } else {
+      authError.textContent = r.error || "操作失败";
+    }
   });
-  deleteBtn.addEventListener("click", function(){ if (!editingDate) return; delete data[editingDate]; saveData(); closeModal(); render(); showToast("已删除"); });
-  cancelBtn.addEventListener("click", closeModal);
-  overlay.addEventListener("click", function(e){ if (e.target === overlay) closeModal(); });
-  document.addEventListener("keydown", function(e) { if (e.key === "Escape" && overlay.classList.contains("open")) closeModal(); if (e.key === "Enter" && overlay.classList.contains("open") && (document.activeElement === weightInp || document.activeElement === poopBtn)) { e.preventDefault(); saveBtn.click(); } });
-  prevBtn.addEventListener("click", function(){ viewMonth--; if(viewMonth<1){viewMonth=12;viewYear--;} render(); });
-  nextBtn.addEventListener("click", function(){ viewMonth++; if(viewMonth>12){viewMonth=1;viewYear++;} render(); });
-  grid.addEventListener("click", function(e) { var cell = e.target.closest(".day-cell"); if (!cell || cell.classList.contains("empty") || cell.classList.contains("future")) return; var key = cell.getAttribute("data-date"); if (key) openModal(key); });
-  var t = new Date(); viewYear = t.getFullYear(); viewMonth = t.getMonth() + 1;
-  render();
+}
+
+authBtn.addEventListener("click", doAuth);
+authUser.addEventListener("keydown", function(e){ if(e.key==="Enter") authPass.focus(); });
+authPass.addEventListener("keydown", function(e){ if(e.key==="Enter") doAuth(); });
+authToggle.addEventListener("click", function(){ isLogin = !isLogin; updateAuthUI(); });
+
+logoutBtn.addEventListener("click", function(){
+  api("/api/logout", {method:"POST"}).then(function(){
+    token = "";
+    localStorage.removeItem(TOKEN_KEY);
+    username = "";
+    userDisplay.textContent = "";
+    showAuth();
+  });
+});
+
+// Calendar functions
+function pad2(n) { return ("0"+n).slice(-2); }
+function dateKey(y,m,d) { return y+"-"+pad2(m)+"-"+pad2(d); }
+function isToday(y,m,d) { var t=new Date(); return t.getFullYear()===y && (t.getMonth()+1)===m && t.getDate()===d; }
+function isFutureDate(y,m,d) { var t=new Date(),c=new Date(y,m-1,d); c.setHours(0,0,0,0); t.setHours(0,0,0,0); return c>t; }
+function getMonthData(y,m) { var f=new Date(y,m-1,1),d=f.getDay(); d=(d===0)?6:d-1; return {firstDow:d, daysInMonth:new Date(y,m,0).getDate()}; }
+
+function render() {
+  var md = getMonthData(viewYear, viewMonth);
+  var totalCells = md.firstDow + md.daysInMonth;
+  var totalSlots = Math.ceil(totalCells/7)*7;
+  monthLabel.textContent = viewYear + "年" + viewMonth + "月";
+  var html = "";
+  for (var i=0; i<totalSlots; i++) {
+    var dayNum = i - md.firstDow + 1;
+    var valid = dayNum >= 1 && dayNum <= md.daysInMonth;
+    if (!valid) { html += '<div class="day-cell empty"></div>'; continue; }
+    var cls = ["day-cell"];
+    if (isToday(viewYear,viewMonth,dayNum)) cls.push("today");
+    if (isFutureDate(viewYear,viewMonth,dayNum)) cls.push("future");
+    var key = dateKey(viewYear,viewMonth,dayNum);
+    var entry = data[key];
+    var wh = "";
+    if (entry && entry.weight != null) {
+      var w = Number(entry.weight);
+      wh = '<div class="weight-line"><span class="val">'+w.toFixed(1)+'</span>'+(w>57?' <span class="sad">😞</span>':' <span class="sad">😊</span>')+'</div>';
+    }
+    var pd = entry && entry.poop;
+    html += '<div class="'+cls.join(" ")+'" data-date="'+key+'"><div class="date-num">'+dayNum+'</div>'+wh+'<div class="poop-line '+(pd?"done":"undone")+'">💩</div></div>';
+  }
+  grid.innerHTML = html;
+}
+
+function loadMonthData(year, month) {
+  api("/api/records?year="+year+"&month="+month).then(function(d){
+    data = d;
+    render();
+  });
+}
+
+function openModal(key) {
+  editingDate = key;
+  var d = data[key] || {};
+  var parts = key.split("-").map(Number);
+  modalTitle.textContent = parts[1]+"月"+parts[2]+"日";
+  weightInp.value = (d.weight != null) ? d.weight : "";
+  modalPoop = !!d.poop;
+  if (modalPoop) { poopBtn.innerHTML="💩 已打卡"; poopBtn.classList.add("checked"); }
+  else { poopBtn.innerHTML="💩 未打卡"; poopBtn.classList.remove("checked"); }
+  overlay.classList.add("open");
+  setTimeout(function(){weightInp.focus();},100);
+}
+
+function closeModal() { overlay.classList.remove("open"); editingDate = null; }
+
+function saveModal() {
+  if (!editingDate) return;
+  var r = weightInp.value.trim(), hw = r !== "", w = hw ? parseFloat(r) : null;
+  if (hw && !isNaN(w)) { data[editingDate] = data[editingDate] || {}; data[editingDate].weight = w; }
+  else if (!hw && !modalPoop) { delete data[editingDate]; saveToServer(editingDate, {}); closeModal(); render(); showToast("已清除记录"); return; }
+  else if (!hw) { if (data[editingDate]) { delete data[editingDate].weight; if (!Object.keys(data[editingDate]).length) delete data[editingDate]; } }
+  else { showToast("请输入有效体重", 1800); return; }
+  if (modalPoop) { data[editingDate] = data[editingDate] || {}; data[editingDate].poop = true; }
+  else if (data[editingDate]) { delete data[editingDate].poop; if (!Object.keys(data[editingDate]).length) delete data[editingDate]; }
+  saveToServer(editingDate, data[editingDate] || {});
+  closeModal(); render(); showToast("已保存");
+}
+
+function saveToServer(dateKey, record) {
+  var body = {};
+  if (record.weight !== undefined && record.weight !== null) body.weight = record.weight;
+  if (record.poop) body.poop = true;
+  api("/api/records/"+dateKey, {method:"PUT",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+}
+
+function deleteEntry() {
+  if (!editingDate) return;
+  delete data[editingDate];
+  api("/api/records/"+editingDate, {method:"DELETE"});
+  closeModal(); render(); showToast("已删除");
+}
+
+function initApp() {
+  var t = new Date();
+  viewYear = t.getFullYear();
+  viewMonth = t.getMonth() + 1;
+  loadMonthData(viewYear, viewMonth);
+}
+
+// Events
+grid.addEventListener("click", function(e) {
+  var cell = e.target.closest(".day-cell");
+  if (!cell || cell.classList.contains("empty") || cell.classList.contains("future")) return;
+  var key = cell.getAttribute("data-date");
+  if (key) openModal(key);
+});
+poopBtn.addEventListener("click", function(){ modalPoop = !modalPoop; if(modalPoop){poopBtn.innerHTML="💩 已打卡";poopBtn.classList.add("checked");}else{poopBtn.innerHTML="💩 未打卡";poopBtn.classList.remove("checked");} });
+saveBtn.addEventListener("click", saveModal);
+deleteBtn.addEventListener("click", deleteEntry);
+cancelBtn.addEventListener("click", closeModal);
+overlay.addEventListener("click", function(e){ if(e.target===overlay) closeModal(); });
+document.addEventListener("keydown", function(e){
+  if (e.key==="Escape" && overlay.classList.contains("open")) closeModal();
+  if (e.key==="Enter" && overlay.classList.contains("open") && (document.activeElement===weightInp||document.activeElement===poopBtn)) { e.preventDefault(); saveBtn.click(); }
+});
+prevBtn.addEventListener("click", function(){ viewMonth--; if(viewMonth<1){viewMonth=12;viewYear--;} loadMonthData(viewYear,viewMonth); });
+nextBtn.addEventListener("click", function(){ viewMonth++; if(viewMonth>12){viewMonth=1;viewYear++;} loadMonthData(viewYear,viewMonth); });
+
+// Boot
+if (token) {
+  api("/api/me").then(function(r){
+    if (r.username) {
+      username = r.username;
+      userDisplay.textContent = username;
+      hideAuth();
+      initApp();
+    } else {
+      localStorage.removeItem(TOKEN_KEY);
+      token = "";
+      showAuth();
+    }
+  });
+} else {
+  showAuth();
+}
+updateAuthUI();
 })();
 </script>
 </body>
