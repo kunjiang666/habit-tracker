@@ -1,5 +1,5 @@
 
-import json, os, sqlite3, hashlib, secrets
+import os, hashlib, secrets, json
 from flask import Flask, request, jsonify, send_from_directory
 from flask_cors import CORS
 from functools import wraps
@@ -10,32 +10,125 @@ CORS(app, supports_credentials=True)
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_FILE = os.path.join(BASE_DIR, "data.db")
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
-USE_PG = bool(DATABASE_URL)
 
-if USE_PG:
-    import psycopg2
-    from psycopg2.extras import RealDictCursor
+# ---- Database detection ----
+USE_ORACLE = False
+USE_PG = False
+ORACLE_DSN = os.environ.get("ORACLE_DSN", "localhost:1521/orcl")
+ORACLE_USER = os.environ.get("ORACLE_USER", "SYSTEM")
+ORACLE_PASS = os.environ.get("ORACLE_PASS", "12345678")
 
-def get_db_sqlite():
-    conn = sqlite3.connect(DB_FILE)
-    conn.row_factory = sqlite3.Row
-    conn.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
-    conn.execute("CREATE TABLE IF NOT EXISTS records (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, date TEXT NOT NULL, weight REAL, poop INTEGER DEFAULT 0, FOREIGN KEY (user_id) REFERENCES users(id), UNIQUE(user_id, date))")
-    conn.execute("CREATE TABLE IF NOT EXISTS sessions (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, token TEXT UNIQUE NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES users(id))")
-    conn.commit()
-    return conn
+try:
+    import oracledb
+    t = oracledb.connect(user=ORACLE_USER, password=ORACLE_PASS, dsn=ORACLE_DSN)
+    t.close()
+    USE_ORACLE = True
+    print("=== Database: Oracle ===")
+except Exception as e:
+    print("Oracle unavailable:", str(e)[:60])
+    if DATABASE_URL:
+        USE_PG = True
+        import psycopg2
+        from psycopg2.extras import RealDictCursor
+        print("=== Database: PostgreSQL ===")
+    else:
+        import sqlite3
+        print("=== Database: SQLite ===")
 
-def get_db_pg():
-    conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
-    with conn.cursor() as cur:
-        cur.execute("CREATE TABLE IF NOT EXISTS users (id SERIAL PRIMARY KEY, username VARCHAR(100) UNIQUE NOT NULL, password_hash VARCHAR(200) NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
-        cur.execute("CREATE TABLE IF NOT EXISTS records (id SERIAL PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), date VARCHAR(20) NOT NULL, weight REAL, poop INTEGER DEFAULT 0, UNIQUE(user_id, date))")
-        cur.execute("CREATE TABLE IF NOT EXISTS sessions (id SERIAL PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), token VARCHAR(200) UNIQUE NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
-    conn.commit()
-    return conn
+# ---- SQL helpers ----
+def _sql(sql):
+    """Convert ? placeholders to DB-specific format"""
+    if USE_ORACLE:
+        parts = sql.split("?")
+        result = parts[0]
+        i = 0
+        for p in parts[1:]:
+            i += 1
+            result += f":{i}" + p
+        return result
+    elif USE_PG:
+        return sql.replace("?", "%s")
+    return sql
+
+def _run(conn, sql, params=None, one=False, all=False):
+    """Execute query returning rows if needed"""
+    if USE_ORACLE:
+        with conn.cursor() as cur:
+            cur.execute(_sql(sql), params or [])
+            if one:
+                r = cur.fetchone()
+                if r:
+                    cols = [d[0].lower() for d in cur.description]
+                    return dict(zip(cols, r))
+                return None
+            if all:
+                rows = cur.fetchall()
+                if not rows:
+                    return []
+                cols = [d[0].lower() for d in cur.description]
+                return [dict(zip(cols, r)) for r in rows]
+            return cur.rowcount
+    elif USE_PG:
+        with conn.cursor() as cur:
+            cur.execute(_sql(sql), params or [])
+            if one:
+                return cur.fetchone()
+            if all:
+                return cur.fetchall()
+            conn.commit()
+            return cur.rowcount
+    else:
+        if params:
+            c = conn.execute(_sql(sql), params)
+        else:
+            c = conn.execute(_sql(sql))
+        if one:
+            return c.fetchone()
+        if all:
+            return c.fetchall()
+        conn.commit()
+        return c.rowcount
 
 def get_db():
-    return get_db_pg() if USE_PG else get_db_sqlite()
+    if USE_ORACLE:
+        import oracledb
+        conn = oracledb.connect(user=ORACLE_USER, password=ORACLE_PASS, dsn=ORACLE_DSN)
+        _init_oracle(conn)
+        return conn
+    elif USE_PG:
+        conn = psycopg2.connect(DATABASE_URL, cursor_factory=RealDictCursor)
+        _init_pg(conn)
+        return conn
+    else:
+        conn = sqlite3.connect(DB_FILE)
+        conn.row_factory = sqlite3.Row
+        _init_sqlite(conn)
+        return conn
+
+def _init_oracle(conn):
+    with conn.cursor() as cur:
+        for tname, ddl in [
+            ("USERS", "CREATE TABLE users (id NUMBER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, username VARCHAR2(100) UNIQUE NOT NULL, password_hash VARCHAR2(200) NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"),
+            ("RECORDS", "CREATE TABLE records (id NUMBER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, user_id NUMBER NOT NULL, record_date VARCHAR2(20) NOT NULL, weight NUMBER, poop NUMBER DEFAULT 0, UNIQUE(user_id, record_date))"),
+            ("SESSIONS", "CREATE TABLE sessions (id NUMBER GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY, user_id NUMBER NOT NULL, token VARCHAR2(200) UNIQUE NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)"),
+        ]:
+            cur.execute("SELECT COUNT(*) FROM user_tables WHERE table_name = :1", [tname])
+            if cur.fetchone()[0] == 0:
+                cur.execute(ddl)
+    conn.commit()
+
+def _init_pg(conn):
+    with conn.cursor() as cur:
+        cur.execute("CREATE TABLE IF NOT EXISTS users (id SERIAL PRIMARY KEY, username VARCHAR(100) UNIQUE NOT NULL, password_hash VARCHAR(200) NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
+        cur.execute("CREATE TABLE IF NOT EXISTS records (id SERIAL PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), record_date VARCHAR(20) NOT NULL, weight REAL, poop INTEGER DEFAULT 0, UNIQUE(user_id, record_date))")
+        cur.execute("CREATE TABLE IF NOT EXISTS sessions (id SERIAL PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), token VARCHAR(200) UNIQUE NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
+    conn.commit()
+
+def _init_sqlite(conn):
+    conn.execute("CREATE TABLE IF NOT EXISTS users (id INTEGER PRIMARY KEY AUTOINCREMENT, username TEXT UNIQUE NOT NULL, password_hash TEXT NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP)")
+    conn.execute("CREATE TABLE IF NOT EXISTS records (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, record_date TEXT NOT NULL, weight REAL, poop INTEGER DEFAULT 0, FOREIGN KEY (user_id) REFERENCES users(id), UNIQUE(user_id, record_date))")
+    conn.execute("CREATE TABLE IF NOT EXISTS sessions (id INTEGER PRIMARY KEY AUTOINCREMENT, user_id INTEGER NOT NULL, token TEXT UNIQUE NOT NULL, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, FOREIGN KEY (user_id) REFERENCES users(id))")
+    conn.commit()
 
 def hash_password(password):
     return hashlib.sha256((password + "habit_tracker_salt_2026").encode()).hexdigest()
@@ -48,14 +141,8 @@ def get_user_by_token(token):
         return None
     conn = get_db()
     try:
-        if USE_PG:
-            with conn.cursor() as cur:
-                cur.execute("SELECT user_id FROM sessions WHERE token = %s", (token,))
-                row = cur.fetchone()
-                return row["user_id"] if row else None
-        else:
-            row = conn.execute("SELECT user_id FROM sessions WHERE token = ?", (token,)).fetchone()
-            return row["user_id"] if row else None
+        r = _run(conn, "SELECT user_id FROM sessions WHERE token = ?", [token], one=True)
+        return r["user_id"] if r else None
     finally:
         conn.close()
 
@@ -70,7 +157,7 @@ def require_auth(f):
         return f(*args, **kwargs)
     return decorated
 
-# ---- Serve frontend ----
+# ---- Routes ----
 @app.route("/")
 def serve_index():
     return send_from_directory(BASE_DIR, "index.html")
@@ -79,7 +166,6 @@ def serve_index():
 def serve_static(path):
     return send_from_directory(BASE_DIR, path)
 
-# ---- Auth ----
 @app.route("/api/register", methods=["POST"])
 def register():
     data = request.get_json(silent=True) or {}
@@ -94,29 +180,20 @@ def register():
     conn = get_db()
     try:
         ph = hash_password(password)
-        if USE_PG:
-            with conn.cursor() as cur:
-                cur.execute("INSERT INTO users (username, password_hash) VALUES (%s, %s)", (username, ph))
-                cur.execute("SELECT id FROM users WHERE username = %s", (username,))
-                user_id = cur.fetchone()["id"]
-                token = generate_token()
-                cur.execute("INSERT INTO sessions (user_id, token) VALUES (%s, %s)", (user_id, token))
-            conn.commit()
-            conn.close()
-        else:
-            conn.execute("INSERT INTO users (username, password_hash) VALUES (?, ?)", (username, ph))
-            conn.commit()
-            user = conn.execute("SELECT id FROM users WHERE username = ?", (username,)).fetchone()
-            token = generate_token()
-            conn.execute("INSERT INTO sessions (user_id, token) VALUES (?, ?)", (user["id"], token))
-            conn.commit()
-            conn.close()
+        _run(conn, "INSERT INTO users (username, password_hash) VALUES (?, ?)", [username, ph])
+        r = _run(conn, "SELECT id FROM users WHERE username = ?", [username], one=True)
+        token = generate_token()
+        _run(conn, "INSERT INTO sessions (user_id, token) VALUES (?, ?)", [r["id"], token])
+        conn.commit()
         return jsonify({"ok": True, "token": token, "username": username})
     except Exception as e:
-        conn.close()
-        if "UNIQUE" in str(e) or "duplicate" in str(e).lower():
+        conn.rollback()
+        err = str(e).lower()
+        if "unique" in err or "duplicate" in err or "already exists" in err:
             return jsonify({"error": "用户名已存在"}), 400
         return jsonify({"error": str(e)[:100]}), 400
+    finally:
+        conn.close()
 
 @app.route("/api/login", methods=["POST"])
 def login():
@@ -128,24 +205,13 @@ def login():
     conn = get_db()
     try:
         ph = hash_password(password)
-        if USE_PG:
-            with conn.cursor() as cur:
-                cur.execute("SELECT id, username FROM users WHERE username = %s AND password_hash = %s", (username, ph))
-                user = cur.fetchone()
-                if not user:
-                    return jsonify({"error": "用户名或密码错误"}), 403
-                token = generate_token()
-                cur.execute("INSERT INTO sessions (user_id, token) VALUES (%s, %s)", (user["id"], token))
-                conn.commit()
-                return jsonify({"ok": True, "token": token, "username": user["username"]})
-        else:
-            user = conn.execute("SELECT id, username FROM users WHERE username = ? AND password_hash = ?", (username, ph)).fetchone()
-            if not user:
-                return jsonify({"error": "用户名或密码错误"}), 403
-            token = generate_token()
-            conn.execute("INSERT INTO sessions (user_id, token) VALUES (?, ?)", (user["id"], token))
-            conn.commit()
-            return jsonify({"ok": True, "token": token, "username": user["username"]})
+        user = _run(conn, "SELECT id, username FROM users WHERE username = ? AND password_hash = ?", [username, ph], one=True)
+        if not user:
+            return jsonify({"error": "用户名或密码错误"}), 403
+        token = generate_token()
+        _run(conn, "INSERT INTO sessions (user_id, token) VALUES (?, ?)", [user["id"], token])
+        conn.commit()
+        return jsonify({"ok": True, "token": token, "username": user["username"]})
     finally:
         conn.close()
 
@@ -155,11 +221,7 @@ def logout():
     token = request.headers.get("Authorization", "").replace("Bearer ", "") or request.args.get("token", "")
     conn = get_db()
     try:
-        if USE_PG:
-            with conn.cursor() as cur:
-                cur.execute("DELETE FROM sessions WHERE token = %s", (token,))
-        else:
-            conn.execute("DELETE FROM sessions WHERE token = ?", (token,))
+        _run(conn, "DELETE FROM sessions WHERE token = ?", [token])
         conn.commit()
     finally:
         conn.close()
@@ -170,19 +232,13 @@ def logout():
 def me():
     conn = get_db()
     try:
-        if USE_PG:
-            with conn.cursor() as cur:
-                cur.execute("SELECT id, username, created_at FROM users WHERE id = %s", (request.user_id,))
-                user = cur.fetchone()
-        else:
-            user = conn.execute("SELECT id, username, created_at FROM users WHERE id = ?", (request.user_id,)).fetchone()
+        user = _run(conn, "SELECT id, username, created_at FROM users WHERE id = ?", [request.user_id], one=True)
         if not user:
             return jsonify({"error": "not found"}), 404
         return jsonify({"id": user["id"], "username": user["username"], "created_at": str(user["created_at"])})
     finally:
         conn.close()
 
-# ---- Records API ----
 @app.route("/api/records", methods=["GET"])
 @require_auth
 def get_records():
@@ -190,20 +246,11 @@ def get_records():
     month = request.args.get("month")
     conn = get_db()
     try:
-        if USE_PG:
-            with conn.cursor() as cur:
-                prefix = f"{year}-{int(month):02d}" if year and month else ""
-                if prefix:
-                    cur.execute("SELECT date, weight, poop FROM records WHERE user_id = %s AND date LIKE %s", (request.user_id, prefix + "%"))
-                else:
-                    cur.execute("SELECT date, weight, poop FROM records WHERE user_id = %s", (request.user_id,))
-                rows = cur.fetchall()
+        prefix = f"{year}-{int(month):02d}" if year and month else ""
+        if prefix:
+            rows = _run(conn, "SELECT record_date, weight, poop FROM records WHERE user_id = ? AND record_date LIKE ?", [request.user_id, prefix + "%"], all=True)
         else:
-            if year and month:
-                prefix = f"{year}-{int(month):02d}"
-                rows = conn.execute("SELECT date, weight, poop FROM records WHERE user_id = ? AND date LIKE ?", (request.user_id, prefix + "%")).fetchall()
-            else:
-                rows = conn.execute("SELECT date, weight, poop FROM records WHERE user_id = ?", (request.user_id,)).fetchall()
+            rows = _run(conn, "SELECT record_date, weight, poop FROM records WHERE user_id = ?", [request.user_id], all=True)
         result = {}
         for r in rows:
             entry = {}
@@ -211,7 +258,7 @@ def get_records():
                 entry["weight"] = r["weight"]
             if r["poop"]:
                 entry["poop"] = True
-            result[r["date"]] = entry
+            result[r["record_date"]] = entry
         return jsonify(result)
     finally:
         conn.close()
@@ -220,22 +267,21 @@ def get_records():
 @require_auth
 def put_record(date):
     record = request.get_json(silent=True) or {}
+    weight = record.get("weight")
+    poop = 1 if record.get("poop") else 0
     conn = get_db()
     try:
-        weight = record.get("weight")
-        poop = 1 if record.get("poop") else 0
-        if USE_PG:
-            with conn.cursor() as cur:
-                cur.execute("INSERT INTO records (user_id, date, weight, poop) VALUES (%s, %s, %s, %s) ON CONFLICT (user_id, date) DO UPDATE SET weight = %s, poop = %s",
-                           (request.user_id, date, weight, poop, weight, poop))
+        if USE_ORACLE:
+            _run(conn, "DELETE FROM records WHERE user_id = ? AND record_date = ?", [request.user_id, date])
+            _run(conn, "INSERT INTO records (user_id, record_date, weight, poop) VALUES (?, ?, ?, ?)", [request.user_id, date, weight, poop])
+        elif USE_PG:
+            _run(conn, "INSERT INTO records (user_id, record_date, weight, poop) VALUES (?, ?, ?, ?) ON CONFLICT (user_id, record_date) DO UPDATE SET weight = ?, poop = ?", [request.user_id, date, weight, poop, weight, poop])
         else:
-            if weight is not None:
-                conn.execute("INSERT OR REPLACE INTO records (user_id, date, weight, poop) VALUES (?, ?, ?, ?)",
-                            (request.user_id, date, weight, poop))
-            else:
-                conn.execute("INSERT OR REPLACE INTO records (user_id, date, weight, poop) VALUES (?, ?, ?, ?)",
-                            (request.user_id, date, None, poop))
+            _run(conn, "INSERT OR REPLACE INTO records (user_id, record_date, weight, poop) VALUES (?, ?, ?, ?)", [request.user_id, date, weight, poop])
         conn.commit()
+    except Exception as e:
+        conn.rollback()
+        return jsonify({"error": str(e)[:100]}), 400
     finally:
         conn.close()
     return jsonify({"ok": True})
@@ -245,35 +291,27 @@ def put_record(date):
 def delete_record(date):
     conn = get_db()
     try:
-        if USE_PG:
-            with conn.cursor() as cur:
-                cur.execute("DELETE FROM records WHERE user_id = %s AND date = %s", (request.user_id, date))
-        else:
-            conn.execute("DELETE FROM records WHERE user_id = ? AND date = ?", (request.user_id, date))
+        _run(conn, "DELETE FROM records WHERE user_id = ? AND record_date = ?", [request.user_id, date])
         conn.commit()
     finally:
         conn.close()
     return jsonify({"ok": True})
-
 
 @app.route("/api/admin/data", methods=["GET"])
 def admin_data():
     pw = request.args.get("pw", "")
     admin_pw = os.environ.get("ADMIN_PASSWORD", "admin888")
     if pw != admin_pw:
-        return jsonify({"error": "密码错误，请在URL加 ?pw=你的密码"}), 403
+        return jsonify({"error": "密码错误"}), 403
     conn = get_db()
     try:
-        if USE_PG:
-            with conn.cursor() as cur:
-                cur.execute("SELECT id, username, created_at FROM users ORDER BY id")
-                users = [dict(r) for r in cur.fetchall()]
-                cur.execute("SELECT r.id, u.username, r.date, r.weight, r.poop FROM records r JOIN users u ON r.user_id = u.id ORDER BY u.username, r.date")
-                records = [dict(r) for r in cur.fetchall()]
-        else:
-            users = [{"id":r["id"],"username":r["username"],"created_at":str(r["created_at"])} for r in conn.execute("SELECT id, username, created_at FROM users ORDER BY id").fetchall()]
-            records = [{"id":r["id"],"username":r["username"],"date":r["date"],"weight":r["weight"],"poop":bool(r["poop"])} for r in conn.execute("SELECT r.id, u.username, r.date, r.weight, r.poop FROM records r JOIN users u ON r.user_id = u.id ORDER BY u.username, r.date").fetchall()]
-        return jsonify({"users": users, "records": records})
+        users = _run(conn, "SELECT id, username, created_at FROM users ORDER BY id", all=True) or []
+        records = _run(conn, "SELECT r.id, u.username, r.record_date, r.weight, r.poop FROM records r JOIN users u ON r.user_id = u.id ORDER BY u.username, r.record_date", all=True) or []
+        users_out = [{"id":u["id"],"username":u["username"],"created_at":str(u["created_at"])} for u in users]
+        records_out = []
+        for r in records:
+            records_out.append({"id":r["id"],"username":r["username"],"date":r["record_date"],"weight":r["weight"],"poop":bool(r["poop"])})
+        return jsonify({"users": users_out, "records": records_out})
     finally:
         conn.close()
 
@@ -282,9 +320,8 @@ if __name__ == "__main__":
     import socket
     hostname = socket.gethostname()
     local_ip = socket.gethostbyname(hostname)
-    db_type = "PostgreSQL" if USE_PG else "SQLite"
-    print(f"=== \u670d\u52a1\u5df2\u542f\u52a8\uff01===")
-    print(f"   \u6570\u636e\u5e93: {db_type}")
-    print(f"   \u672c\u673a\u8bbf\u95ee: http://localhost:{port}")
-    print(f"   \u5c40\u57df\u7f51\u8bbf\u95ee: http://{local_ip}:{port}")
+    db_name = "Oracle" if USE_ORACLE else ("PostgreSQL" if USE_PG else "SQLite")
+    print(f"   数据库: {db_name}")
+    print(f"   本机: http://localhost:{port}")
+    print(f"   局域网: http://{local_ip}:{port}")
     app.run(host="0.0.0.0", port=port, debug=False)
