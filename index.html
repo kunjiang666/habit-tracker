@@ -1,0 +1,404 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>每日打卡</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root {
+    --primary: #4f7ec9; --primary-light: #eaf0fa; --bg: #f4f5f7;
+    --card: #ffffff; --text: #1e1e2a; --text-muted: #8e8ea0;
+    --border: #e2e4e8; --sad: #d95c5c; --poop-color: #8b6b4a;
+    --today-ring: var(--primary); --radius: 10px;
+  }
+  html { font-size: 15px; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Noto Sans SC", sans-serif;
+    background: var(--bg); color: var(--text); min-height: 100vh;
+    display: flex; justify-content: center; padding: 24px 16px;
+  }
+  .container { width: 100%; max-width: 560px; }
+
+  .header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; }
+  .header h1 { font-size: 1.35rem; font-weight: 600; letter-spacing: 0.5px; }
+  .month-nav { display: flex; align-items: center; gap: 10px; }
+  .month-nav .month-label { font-size: 1.05rem; font-weight: 500; min-width: 108px; text-align: center; }
+  .month-nav button {
+    background: var(--card); border: 1px solid var(--border); border-radius: 6px;
+    width: 32px; height: 32px; font-size: 1rem; cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: background 0.15s, border-color 0.15s; color: var(--text); line-height: 1;
+  }
+  .month-nav button:hover { background: var(--primary-light); border-color: var(--primary); }
+
+  .legend { display: flex; gap: 20px; margin-bottom: 16px; font-size: 0.85rem; color: var(--text-muted); }
+  .legend span { display: flex; align-items: center; gap: 4px; }
+
+  .calendar { background: var(--card); border-radius: var(--radius); box-shadow: 0 1px 4px rgba(0,0,0,0.06); overflow: hidden; }
+  .weekdays { display: grid; grid-template-columns: repeat(7, 1fr); background: #f9fafb; border-bottom: 1px solid var(--border); }
+  .weekdays span { padding: 10px 0 8px; text-align: center; font-size: 0.8rem; font-weight: 500; color: var(--text-muted); }
+  .weekdays span:last-child, .weekdays span:first-child { color: #c0a0a0; }
+  .days-grid { display: grid; grid-template-columns: repeat(7, 1fr); }
+
+  .day-cell {
+    aspect-ratio: 1; padding: 4px 2px; display: flex; flex-direction: column;
+    align-items: center; justify-content: flex-start; cursor: pointer;
+    border-right: 1px solid var(--border); border-bottom: 1px solid var(--border);
+    background: var(--card); transition: background 0.12s; position: relative; min-height: 72px;
+  }
+  .day-cell:nth-child(7n) { border-right: none; }
+  .day-cell:hover { background: var(--primary-light); }
+  .day-cell.empty { cursor: default; background: #fafbfc; }
+  .day-cell.empty:hover { background: #fafbfc; }
+  .day-cell.today { box-shadow: inset 0 0 0 2px var(--today-ring); z-index: 1; }
+  .day-cell.future { opacity: 0.55; }
+  .day-cell .date-num { font-size: 0.82rem; font-weight: 500; line-height: 1.4; margin-top: 2px; }
+  .day-cell .weight-line { font-size: 0.7rem; line-height: 1.3; margin-top: 1px; display: flex; align-items: center; gap: 1px; }
+  .day-cell .weight-line .val { font-weight: 500; }
+  .day-cell .weight-line .sad { font-size: 0.75rem; }
+  .day-cell .poop-line { font-size: 1.05rem; line-height: 1; margin-top: auto; margin-bottom: 3px; transition: filter 0.2s, opacity 0.2s; }
+  .day-cell .poop-line.done { filter: grayscale(0); opacity: 1; }
+  .day-cell .poop-line.undone { filter: grayscale(1); opacity: 0.2; }
+
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.35); z-index: 100; justify-content: center; align-items: center; padding: 16px; }
+  .modal-overlay.open { display: flex; }
+  .modal-box {
+    background: var(--card); border-radius: 14px; width: 100%; max-width: 340px;
+    padding: 24px 22px 20px; box-shadow: 0 8px 30px rgba(0,0,0,0.12);
+    animation: fadeUp 0.18s ease;
+  }
+  @keyframes fadeUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+  .modal-box h2 { font-size: 1.1rem; font-weight: 600; margin-bottom: 18px; text-align: center; }
+  .form-group { margin-bottom: 16px; }
+  .form-group label { display: block; font-size: 0.85rem; font-weight: 500; margin-bottom: 6px; color: var(--text-muted); }
+  .form-group input[type="number"] { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 1rem; outline: none; transition: border-color 0.15s; }
+  .form-group input[type="number"]:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(79,126,201,0.12); }
+  .poop-btn { display: flex; align-items: center; justify-content: center; gap: 8px; width: 100%; padding: 10px; border: 1px solid var(--border); border-radius: 8px; background: var(--card); font-size: 1rem; cursor: pointer; transition: background 0.15s, border-color 0.15s; }
+  .poop-btn:hover { background: var(--primary-light); }
+  .poop-btn.checked { border-color: var(--poop-color); background: #f5ede4; }
+  .modal-actions { display: flex; gap: 8px; margin-top: 20px; }
+  .modal-actions button { flex: 1; padding: 10px 0; border-radius: 8px; font-size: 0.9rem; font-weight: 500; cursor: pointer; border: 1px solid var(--border); background: var(--card); transition: background 0.15s; }
+  .modal-actions .btn-primary { background: var(--primary); color: #fff; border-color: var(--primary); }
+  .modal-actions .btn-primary:hover { filter: brightness(1.08); }
+  .modal-actions .btn-danger { color: var(--sad); border-color: #f0d0d0; }
+  .modal-actions .btn-danger:hover { background: #fdf0f0; }
+  .modal-actions .btn-cancel:hover { background: #f5f5f5; }
+
+  .toast { position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%); background: #2d2d3a; color: #f0f0f0; padding: 10px 22px; border-radius: 8px; font-size: 0.85rem; opacity: 0; transition: opacity 0.25s; pointer-events: none; z-index: 200; white-space: nowrap; }
+  .toast.show { opacity: 1; }
+
+  @media (max-width: 420px) {
+    body { padding: 12px 8px; }
+    .day-cell { min-height: 62px; padding: 3px 1px; }
+    .day-cell .date-num { font-size: 0.75rem; }
+    .day-cell .weight-line { font-size: 0.65rem; }
+    .day-cell .poop-line { font-size: 0.9rem; }
+    .modal-box { padding: 18px 16px 16px; }
+    .header h1 { font-size: 1.15rem; }
+  }
+
+  .login-overlay { position: fixed; inset: 0; z-index: 999; background: var(--bg); display: flex; justify-content: center; align-items: center; padding: 20px; }
+  .login-overlay.hidden { display: none; }
+  .login-box { background: var(--card); border-radius: 14px; padding: 36px 28px 28px; width: 100%; max-width: 320px; box-shadow: 0 2px 16px rgba(0,0,0,0.08); text-align: center; }
+  .login-box h2 { font-size: 1.2rem; font-weight: 600; margin-bottom: 6px; }
+  .login-box p { font-size: 0.85rem; color: var(--text-muted); margin-bottom: 20px; }
+  .login-box input[type="password"] { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 1rem; outline: none; margin-bottom: 12px; text-align: center; }
+  .login-box input[type="password"]:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(79,126,201,0.12); }
+  .login-box .login-btn { width: 100%; padding: 10px 0; border: none; border-radius: 8px; background: var(--primary); color: #fff; font-size: 0.95rem; font-weight: 500; cursor: pointer; }
+  .login-box .login-btn:hover { filter: brightness(1.08); }
+  .login-box .login-error { color: var(--sad); font-size: 0.8rem; margin-top: 8px; min-height: 1.2em; }
+  .login-box .logout-link { display: inline-block; margin-top: 16px; font-size: 0.78rem; color: var(--text-muted); cursor: pointer; }
+  .login-box .logout-link:hover { color: var(--sad); }
+</style>
+</head>
+<body>
+
+<div class="login-overlay hidden" id="loginOverlay">
+  <div class="login-box">
+    <h2>🔐 每日打卡</h2>
+    <p>请输入密码以继续</p>
+    <input type="password" id="passwordInput" placeholder="输入密码" autocomplete="off">
+    <button class="login-btn" id="loginBtn">进入</button>
+    <div class="login-error" id="loginError"></div>
+    <div class="logout-link" id="logoutLink">退出登录</div>
+  </div>
+</div>
+
+<div class="container">
+  <div class="header">
+    <h1>📋 每日打卡</h1>
+    <div class="month-nav">
+      <button id="prevMonthBtn" title="上个月">◀</button>
+      <span class="month-label" id="monthLabel"></span>
+      <button id="nextMonthBtn" title="下个月">▶</button>
+    </div>
+  </div>
+
+  <div class="legend">
+    <span><span style="font-size:1rem;">😊</span> ≤ 57kg &nbsp; <span style="font-size:1rem;">😞</span> &gt; 57kg</span>
+    <span>
+      <span style="filter:grayscale(1);opacity:0.25;">💩</span>
+      <span style="margin:0 2px;">→</span>
+      <span>💩</span>
+      拉屎打卡
+    </span>
+  </div>
+
+  <div class="calendar">
+    <div class="weekdays">
+      <span>一</span><span>二</span><span>三</span>
+      <span>四</span><span>五</span><span>六</span><span>日</span>
+    </div>
+    <div class="days-grid" id="daysGrid"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modalOverlay">
+  <div class="modal-box">
+    <h2 id="modalTitle">6 月 18 日</h2>
+    <div class="form-group">
+      <label>体重（kg）</label>
+      <input type="number" id="weightInput" step="0.1" placeholder="留空则不记录" autofocus>
+    </div>
+    <div class="form-group">
+      <label>拉屎</label>
+      <button class="poop-btn" id="poopBtn">💩 未打卡</button>
+    </div>
+    <div class="modal-actions">
+      <button class="btn-primary" id="saveBtn">保存</button>
+      <button class="btn-danger" id="deleteBtn">删除</button>
+      <button class="btn-cancel" id="cancelBtn">取消</button>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+  let authOk = false;
+  function showLogin() { document.getElementById('loginOverlay').classList.remove('hidden'); }
+  function hideLogin() { document.getElementById('loginOverlay').classList.add('hidden'); }
+  async function checkAuth() {
+    try { const res = await fetch('/api/check-auth', { credentials: 'include' });
+      const d = await res.json();
+      if (d.required) { if (!d.auth) { showLogin(); return false; } }
+      return true;
+    } catch { return false; }
+  }
+  async function doLogin(pw) {
+    const r = await fetch('/api/login', { method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ password: pw }) });
+    if (!r.ok) throw Error('wrong');
+    hideLogin(); authOk = true;
+  }
+  document.getElementById('loginBtn').addEventListener('click', async function() {
+    const inp = document.getElementById('passwordInput');
+    const err = document.getElementById('loginError');
+    err.textContent = '';
+    try { await doLogin(inp.value); inp.value = ''; initApp(); }
+    catch { err.textContent = '密码错误，请重试'; }
+  });
+  document.getElementById('passwordInput').addEventListener('keydown', function(e) {
+    if (e.key === 'Enter') document.getElementById('loginBtn').click(); });
+  document.getElementById('logoutLink').addEventListener('click', async function() {
+    await fetch('/api/logout', { method: 'POST', credentials: 'include' });
+    showLogin(); document.getElementById('passwordInput').value = ''; });
+
+(function() {
+  'use strict';
+
+  let data = {};
+  let dataLoaded = false;
+  let viewYear, viewMonth;
+  let editingDate = null;
+  let modalPoop = false;
+
+  const grid       = document.getElementById('daysGrid');
+  const monthLabel = document.getElementById('monthLabel');
+  const overlay    = document.getElementById('modalOverlay');
+  const modalTitle = document.getElementById('modalTitle');
+  const weightInp  = document.getElementById('weightInput');
+  const poopBtn    = document.getElementById('poopBtn');
+  const saveBtn    = document.getElementById('saveBtn');
+  const deleteBtn  = document.getElementById('deleteBtn');
+  const cancelBtn  = document.getElementById('cancelBtn');
+  const toastEl    = document.getElementById('toast');
+  const prevBtn    = document.getElementById('prevMonthBtn');
+  const nextBtn    = document.getElementById('nextMonthBtn');
+
+  async function loadMonthData(year, month) {
+    try {
+      const res = await fetch(`/api/records?year=${year}&month=${month}`), { credentials: 'include' };
+      data = await res.json();
+    } catch (e) {
+      console.warn('加载数据失败:', e);
+      data = {};
+    }
+    dataLoaded = true;
+    render();
+  }
+
+  async function saveRecord(dateKey, record) {
+    const body = {};
+    if (record.weight !== undefined && record.weight !== null) body.weight = record.weight;
+    if (record.poop) body.poop = true;
+    await fetch(`/api/records/${dateKey}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body), { credentials: 'include' }
+    });
+  }
+
+  async function deleteRecord(dateKey) {
+    await fetch(`/api/records/${dateKey}`, { method: 'DELETE' }), { credentials: 'include' };
+  }
+
+  function pad2(n) { return String(n).padStart(2, '0'); }
+
+  function dateKey(y, m, d) { return y + '-' + pad2(m) + '-' + pad2(d); }
+
+  function isToday(y, m, d) { const t = new Date(); return t.getFullYear() === y && (t.getMonth()+1) === m && t.getDate() === d; }
+
+  function isFutureDate(y, m, d) { const t = new Date(); const c = new Date(y,m-1,d); c.setHours(0,0,0,0); t.setHours(0,0,0,0); return c > t; }
+
+  function getMonthData(y, m) {
+    const first = new Date(y, m-1, 1);
+    let dow = first.getDay();
+    dow = (dow === 0) ? 6 : dow - 1;
+    return { firstDow: dow, daysInMonth: new Date(y, m, 0).getDate() };
+  }
+
+  function showToast(msg, d) {
+    toastEl.textContent = msg; toastEl.classList.add('show');
+    clearTimeout(toastEl._timer);
+    toastEl._timer = setTimeout(() => toastEl.classList.remove('show'), d || 1600);
+  }
+
+  function render() {
+    const { firstDow, daysInMonth } = getMonthData(viewYear, viewMonth);
+    const totalCells = firstDow + daysInMonth;
+    const rows = Math.ceil(totalCells / 7);
+    const totalSlots = rows * 7;
+    monthLabel.textContent = viewYear + ' 年 ' + viewMonth + ' 月';
+    let html = '';
+    for (let i = 0; i < totalSlots; i++) {
+      const dayNum = i - firstDow + 1;
+      const valid = dayNum >= 1 && dayNum <= daysInMonth;
+      if (!valid) { html += '<div class="day-cell empty"></div>'; continue; }
+      const cls = ['day-cell'];
+      if (isToday(viewYear, viewMonth, dayNum)) cls.push('today');
+      if (isFutureDate(viewYear, viewMonth, dayNum)) cls.push('future');
+      const key = dateKey(viewYear, viewMonth, dayNum);
+      const entry = data[key];
+      let wh = '';
+      if (entry && entry.weight != null) {
+        const w = Number(entry.weight);
+        wh = '<div class="weight-line"><span class="val">' + w.toFixed(1) + '</span>' + (w > 57 ? ' <span class="sad">\u{1F61E}</span>' : ' <span class="sad">\u{1F60A}</span>') + '</div>';
+      }
+      const pd = entry && entry.poop;
+      html += '<div class="' + cls.join(' ') + '" data-date="' + key + '">'
+            + '<div class="date-num">' + dayNum + '</div>' + wh
+            + '<div class="poop-line ' + (pd ? 'done' : 'undone') + '">\u{1F4A9}</div></div>';
+    }
+    grid.innerHTML = html;
+  }
+
+  function openModal(key) {
+    editingDate = key;
+    const d = data[key] || {};
+    const [y, m, day] = key.split('-').map(Number);
+    modalTitle.textContent = m + ' 月 ' + day + ' 日';
+    weightInp.value = (d.weight != null) ? d.weight : '';
+    modalPoop = !!d.poop;
+    updatePoopBtn();
+    overlay.classList.add('open');
+    setTimeout(() => weightInp.focus(), 100);
+  }
+
+  function closeModal() { overlay.classList.remove('open'); editingDate = null; }
+
+  function updatePoopBtn() {
+    if (modalPoop) { poopBtn.innerHTML = '\u{1F4A9} 已打卡'; poopBtn.classList.add('checked'); }
+    else { poopBtn.innerHTML = '\u{1F4A9} 未打卡'; poopBtn.classList.remove('checked'); }
+  }
+
+  function saveModal() {
+    if (!editingDate) return;
+
+    const raw = weightInp.value.trim();
+    const hw  = raw !== '';
+    const w   = hw ? parseFloat(raw) : null;
+
+    const hasWeight  = hw && !isNaN(w);
+    const hasPoop    = modalPoop;
+
+    if (!hasWeight && !hasPoop) {
+      deleteRecord(editingDate).then(() => {
+        delete data[editingDate];
+        closeModal(); render(); showToast('已清除记录');
+      });
+      return;
+    }
+
+    if (hw && isNaN(w)) {
+      showToast('请输入有效体重', 1800);
+      return;
+    }
+
+    const record = {};
+    if (hasWeight) record.weight = w;
+    if (hasPoop)  record.poop = true;
+
+    data[editingDate] = record;
+    saveRecord(editingDate, record).then(() => {
+      closeModal(); render(); showToast('已保存');
+    }).catch(() => {
+      showToast('保存失败', 1800);
+    });
+  }
+
+  function deleteEntry() {
+    if (!editingDate) return;
+    deleteRecord(editingDate).then(() => {
+      delete data[editingDate];
+      closeModal(); render(); showToast('已删除');
+    });
+  }
+
+  function initView() { const t = new Date(); viewYear = t.getFullYear(); viewMonth = t.getMonth()+1; }
+  function prevMonth() { viewMonth--; if (viewMonth<1) { viewMonth=12; viewYear--; } loadMonthData(viewYear, viewMonth); }
+  function nextMonth() { viewMonth++; if (viewMonth>12) { viewMonth=1; viewYear++; } loadMonthData(viewYear, viewMonth); }
+
+  grid.addEventListener('click', function(e) {
+    if (!dataLoaded) return;
+    const cell = e.target.closest('.day-cell');
+    if (!cell || cell.classList.contains('empty') || cell.classList.contains('future')) return;
+    if (cell.getAttribute('data-date')) openModal(cell.getAttribute('data-date'));
+  });
+
+  poopBtn.addEventListener('click', function() { modalPoop = !modalPoop; updatePoopBtn(); });
+  saveBtn.addEventListener('click', saveModal);
+  deleteBtn.addEventListener('click', deleteEntry);
+  cancelBtn.addEventListener('click', closeModal);
+  overlay.addEventListener('click', function(e) { if (e.target === overlay) closeModal(); });
+  document.addEventListener('keydown', function(e) {
+    if (e.key === 'Escape' && overlay.classList.contains('open')) closeModal();
+    if (e.key === 'Enter' && overlay.classList.contains('open') && (document.activeElement === weightInp || document.activeElement === poopBtn)) { e.preventDefault(); saveModal(); }
+  });
+  prevBtn.addEventListener('click', prevMonth);
+  nextBtn.addEventListener('click', nextMonth);
+
+  async function initApp() {
+    initView();
+    await loadMonthData(viewYear, viewMonth);
+  }
+  initApp();
+})();
+</script>
+
+</body>
+</html>
+
